@@ -1,0 +1,122 @@
+---
+title: "EDA"
+output: html_document
+date: "2024-09-24"
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE)
+library(skimr)
+library(dplyr)
+library(corrplot)
+```
+
+
+```{r}
+hundred_sales <- read.csv('https://raw.githubusercontent.com/Kingtilon1/MachineLearning-BigData/refs/heads/main/100%20Sales%20Records.csv')
+thousand_sales <- read.csv('https://raw.githubusercontent.com/Kingtilon1/MachineLearning-BigData/refs/heads/main/1000%20Sales%20Records.csv')
+```
+
+
+
+### EDA
+Lets explore the data to gain some insights
+This snippet provides an overview of the dataset by showing the first few rows, including column names and sample data. Let’s examine the dataset’s structure to understand the data types and column names:
+
+```{r}
+
+head(hundred_sales)
+head(thousand_sales)
+
+```
+
+
+There are no missing values within both data sets
+
+The average amount of units sold within the smaller dataset are 5128.71 units while the average for the larger dataset is 5053.9888. The larger dataset may include more polorizing numbers within the 'Unites sold column, causing the the average to be lower than the smaller dataset"
+
+```{r}
+
+str(hundred_sales)
+str(thousand_sales)
+skim(hundred_sales)
+skim(thousand_sales)
+
+```
+
+
+Both Data frames share the same columns 
+
+```{r}
+colnames(hundred_sales)
+colnames(thousand_sales)
+
+```
+
+
+Now, let's visualize a correlation matrix for the numerical columns in the dataset. This will help identify pairs of columns that are highly correlated. We see that Total.Revenue, Total.Cost, and Total.Profit have high correlations, there's also a high correlation between those values and Units.Sold and Units.Price  
+
+```{r}
+thousand_sales_num <- thousand_sales %>% select(where(is.numeric))
+thousand_sales_num.cor = cor(thousand_sales_num)
+corrplot(thousand_sales_num.cor)
+
+```
+
+
+Lets do the same with the smaller dataset
+Similar to the larger dataset, the data set has a high correlation between Total.Revenue, Total.Cost, and Total.Profit, there's also a high correlation between those values and Units.Sold and Units.Price 
+
+```{r}
+hundred_sales_num <- hundred_sales %>% select(where(is.numeric))
+hundred_sales_num.cor = cor(hundred_sales_num)
+corrplot(hundred_sales_num.cor)
+
+```
+
+
+Which unit item has the highest average price?
+
+```{r}
+average_price <- hundred_sales %>%
+  group_by(Item.Type) %>%
+  summarise(Average.Unit.Price = mean(Unit.Price)) %>%
+  arrange(desc(Average.Unit.Price))
+
+# Print the result
+print(average_price)
+```
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
