@@ -10,6 +10,10 @@ library(skimr)
 library(dplyr)
 library(corrplot)
 library(caret)
+library(ggplot2)
+library(tidyverse)
+library(randomForest)
+
 ```
 
 
@@ -167,28 +171,159 @@ summary(model_hundred)
 The multiple R squares had a value of 1, now it dropped to .975 due to excluding the Unit.Cost and Total.Cost columns meaning the model explains 100% of the variance, which might indicate overfitting, lets see a distribution of the data in histogram to check for any outliers
 
 ```{r}
+residuals_hundred <- test_hundred$Total.Profit - predictions_hundred
 
+# Compiling results into a dataframe
+results_hundred <- data.frame(Actual = test_hundred$Total.Profit, 
+                               Predicted = predictions_hundred, 
+                               Residuals = residuals_hundred)
+
+# Display the results
+print(results_hundred)
+
+# Create a residual plot
+plot(results_hundred$Predicted, results_hundred$Residuals,
+     xlab = "Predicted Values", ylab = "Residuals",
+     main = "Residuals vs Predicted Values")
+abline(h = 0, col = "red", lwd = 2)  # Add a horizontal line at 0
+```
+
+
+
+The scatter plot displays the residuals on the y-axis against the predicted values on the x-axis. The points are scattered around a horizontal red line at y=0, which represents perfect prediction. The random dispersion of points above and below this line suggests that the model's assumptions of linearity and homoscedasticity (constant variance of residuals) are reasonably met. However, there appear to be a few outliers, particularly some points with larger negative residuals. 
+
+```{r}
+n_cols <- ncol(hundred_sales_num)
+n_rows <- ceiling(n_cols / 3)  # 3 histograms per row
+
+
+# Create histograms for each numeric column
+for (col in names(hundred_sales_num)) {
+  hist(hundred_sales_num[[col]], main = col, xlab = col, col = "skyblue", border = "white")
+}
+
+# Reset the plotting area
+par(mfrow = c(1, 1))
+
+
+```
+Total Revenue and Total Cost seem to be very skewed to the right, I will take the log of the Total Revenue Column to help normalize the data, Since I'm excluding total cost I'll leave that column alone
+
+
+```{r}
+hundred_sales_num$log_Total_Revenue <- log(hundred_sales_num$Total.Revenue)
+thousand_sales_num$log_Total_Revenue <- log(thousand_sales_num$Total.Revenue)
 ```
 
 
 
 
+Retrain model
+```{r}
+# For the hundred sales model
+train_hundred$log_total_revenue <- log(train_hundred$Total.Revenue)
+test_hundred$log_total_revenue <- log(test_hundred$Total.Revenue)
+
+model_hundred <- lm(Total.Profit ~ . - Unit.Cost - Total.Cost - Total.Revenue + log_total_revenue, 
+                    data = train_hundred)
+
+predictions_hundred <- predict(model_hundred, newdata = test_hundred)
+results_hundred <- data.frame(Actual = test_hundred$Total.Profit, Predicted = predictions_hundred)
+mae_hundred <- mean(abs(results_hundred$Actual - results_hundred$Predicted))
+rmse_hundred <- sqrt(mean((results_hundred$Actual - results_hundred$Predicted)^2))
+
+# For the thousand sales model
+train_thousand$log_total_revenue <- log(train_thousand$Total.Revenue)
+test_thousand$log_total_revenue <- log(test_thousand$Total.Revenue)
+
+model_thousand <- lm(Total.Profit ~ . - Unit.Cost - Total.Cost - Total.Revenue + log_total_revenue, 
+                     data = train_thousand)
+
+predictions_thousand <- predict(model_thousand, newdata = test_thousand)
+results_thousand <- data.frame(Actual = test_thousand$Total.Profit, Predicted = predictions_thousand)
+mae_thousand <- mean(abs(results_thousand$Actual - results_thousand$Predicted))
+rmse_thousand <- sqrt(mean((results_thousand$Actual - results_thousand$Predicted)^2))
+```
+
+```{r}
+summary(model_hundred)
+summary(model_thousand)
+```
+
+Both models show strong predictive power, with the 100-sales model achieving a higher R-squared value of 0.9084 compared to 0.8375 for the 1000-sales model. This suggests that the smaller dataset's model explains more of the variance in Total Profit. In both cases, Units Sold is a highly significant predictor. The 100-sales model also indicates log_total_revenue as a significant factor, while this variable is not significant in the larger dataset. Interestingly, the larger dataset model shows no other significant predictors besides Units Sold, which might indicate that the relationship between variables becomes more complex or diluted with more data. Both models have similar residual standard errors, suggesting comparable prediction accuracy despite the difference in dataset sizes.
+
+### Retrevie RMSE values
+```{r}
+rmse_hundred_log <- sqrt(mean((results_hundred$Actual - results_hundred$Predicted)^2))
+
+rmse_thousand_log <- sqrt(mean((results_thousand$Actual - results_thousand$Predicted)^2))
+
+cat("Linear Regression RMSE with log(Total.Revenue) (100 sales):", rmse_hundred_log, "\n")
+cat("Linear Regression RMSE with log(Total.Revenue) (1000 sales):", rmse_thousand_log, "\n")
+```
 
 
+```{r}
+residuals_hundred <- test_hundred$Total.Profit - predictions_hundred
+
+# Compiling results into a dataframe
+results_hundred <- data.frame(Actual = test_hundred$Total.Profit, 
+                               Predicted = predictions_hundred, 
+                               Residuals = residuals_hundred)
+
+print(results_hundred)
+plot(results_hundred$Predicted, results_hundred$Residuals,
+     xlab = "Predicted Values", ylab = "Residuals",
+     main = "Residuals vs Predicted Values")
+abline(h = 0, col = "red", lwd = 2) 
+```
 
 
+We dropped to an R-squared value of 90, meaning we have achieved a more realistic and reliable model. This change indicates we've reduced overfitting while still maintaining strong predictive power. The model now explains 90% of the variance in Total Profit, which is excellent for real-world applications. This improvement suggests we've successfully addressed issues like multicollinearity and potential data leakage, resulting in a more trustworthy and interpretable model that's likely to generalize well to new data.
+
+Now let's try random foresting because it can potentially improve our prediction of Total Revenue. While linear regression provided a good baseline, random forests excel at capturing complex, non-linear relationships between variables that might be present in sales data. This method can automatically handle interactions between features like Item Type, Units Sold, and Unit Price, which could have a nuanced impact on Total Revenue. Random forests are also robust against overfitting, which is beneficial when dealing with the numerous variables in our dataset. By aggregating predictions from multiple decision trees, we might achieve a more accurate forecast of Total Revenue across various product types and sales conditions. Let's see if this approach can provide a more precise estimate of our target variable compared to the linear model.
+
+```{r}
+common_columns <- intersect(colnames(hundred_sales_num), colnames(thousand_sales_num))
+hundred_sales_final <- hundred_sales_num[, common_columns]
+thousand_sales_final <- thousand_sales_num[, common_columns]
+clean_colnames <- function(df) {
+  colnames(df) <- make.names(colnames(df), unique = TRUE)
+  return(df)
+}
+
+hundred_sales_final <- clean_colnames(hundred_sales_num)
+thousand_sales_final <- clean_colnames(thousand_sales_num)
+
+## Train test splitting
+set.seed(123)
+train_index_hundred <- createDataPartition(hundred_sales_final$Total.Profit, p = 0.8, list = FALSE)
+train_hundred <- hundred_sales_final[train_index_hundred, ]
+test_hundred <- hundred_sales_final[-train_index_hundred, ]
+
+train_index_thousand <- createDataPartition(thousand_sales_final$Total.Profit, p = 0.8, list = FALSE)
+train_thousand <- thousand_sales_final[train_index_thousand, ]
+test_thousand <- thousand_sales_final[-train_index_thousand, ]
+
+## run Random Forest
+
+rf_model_hundred <- randomForest(Total.Profit ~ . - Unit.Cost - Total.Cost - Total.Revenue + log_Total_Revenue, 
+                                 data = train_hundred)
+rf_predictions_hundred <- predict(rf_model_hundred, newdata = test_hundred)
+rf_rmse_hundred <- sqrt(mean((test_hundred$Total.Profit - rf_predictions_hundred)^2))
+
+rf_model_thousand <- randomForest(Total.Profit ~ . - Unit.Cost - Total.Cost - Total.Revenue + log_Total_Revenue, 
+                                  data = train_thousand)
+rf_predictions_thousand <- predict(rf_model_thousand, newdata = test_thousand)
+rf_rmse_thousand <- sqrt(mean((test_thousand$Total.Profit - rf_predictions_thousand)^2))
+```
 
 
-
-
-
-
-
-
-
-
-
-
-
-
-
+```{r}
+cat("Linear Regression RMSE (100 sales):", rmse_hundred, "\n")
+cat("Random Forest RMSE (100 sales):", rf_rmse_hundred, "\n")
+cat("Linear Regression RMSE (1000 sales):", rmse_thousand, "\n")
+cat("Random Forest RMSE (1000 sales):", rf_rmse_thousand, "\n")
+```
+As we can see, both the linear regression model with log-transformed Total Revenue and the Random Forest model yield the same RMSE values for each dataset. This identical performance suggests that the log transformation in the linear model effectively captured the non-linear relationships in the data, performing just as well as the more complex Random Forest model. The relationship between the predictors and Total Profit might be well-approximated by a log-linear relationship, which both models have successfully captured.
+In this specific case, the added complexity of the Random Forest model didn't provide additional predictive power over the simpler linear regression with appropriate variable transformation. The linear regression model may be preferable here due to its simplicity and interpretability, given that it matches the performance of the more complex Random Forest model.
