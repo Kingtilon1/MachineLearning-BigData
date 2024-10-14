@@ -9,6 +9,7 @@ knitr::opts_chunk$set(echo = TRUE)
 library(skimr)
 library(dplyr)
 library(corrplot)
+library(caret)
 ```
 
 
@@ -88,15 +89,86 @@ print(average_price)
 ```
 
 
+It's clear that Household items have the average Unit price
+
+
+### Linear Regression prep
+
+Since the item type seems like it will have a significant impact on total revenue I will perform one hot encoding on the Item.Type column for both dataframes
+
+
+```{r}
+
+encoded_data <- model.matrix(~ Item.Type - 1, data = thousand_sales)
+
+encoded_df <- as.data.frame(encoded_data)
+
+thousand_sales <- bind_cols(thousand_sales, encoded_df)
+
+thousand_sales_num <- thousand_sales %>% select(where(is.numeric))
+
+print(thousand_sales)
+```
+
+
+```{r}
+encoded_data <- model.matrix(~ Item.Type - 1, data = hundred_sales)
+
+encoded_df <- as.data.frame(encoded_data)
+
+hundred_sales <- bind_cols(hundred_sales, encoded_df)
+
+hundred_sales_num <- hundred_sales %>% select(where(is.numeric))
+
+colnames(hundred_sales_num)
+
+```
+
+
+### Run the Model, excluding the Unit.Cost and Total.Cost because of high correlation, which led to overfittting
+
+```{r}
+
+set.seed(123)  
+train_index_hundred <- createDataPartition(hundred_sales_num$Total.Profit, p = 0.8, list = FALSE)
+train_hundred <- hundred_sales_num[train_index_hundred, ]
+test_hundred <- hundred_sales_num[-train_index_hundred, ]
+
+model_hundred <- lm(Total.Profit ~ . - Unit.Cost - Total.Cost, data = train_hundred)
+
+predictions_hundred <- predict(model_hundred, newdata = test_hundred)
+
+results_hundred <- data.frame(Actual = test_hundred$Total.Profit, Predicted = predictions_hundred)
+mae_hundred <- mean(abs(results_hundred$Actual - results_hundred$Predicted))
+rmse_hundred <- sqrt(mean((results_hundred$Actual - results_hundred$Predicted)^2))
+
+set.seed(123)
+train_index_thousand <- createDataPartition(thousand_sales_num$Total.Profit, p = 0.8, list = FALSE)
+train_thousand <- thousand_sales_num[train_index_thousand, ]
+test_thousand <- thousand_sales_num[-train_index_thousand, ]
+
+model_thousand <- lm(Total.Profit ~ . - Unit.Cost - Total.Cost, data = train_thousand)
+
+predictions_thousand <- predict(model_thousand, newdata = test_thousand)
+
+results_thousand <- data.frame(Actual = test_thousand$Total.Profit, Predicted = predictions_thousand)
+mae_thousand <- mean(abs(results_thousand$Actual - results_thousand$Predicted))
+rmse_thousand <- sqrt(mean((results_thousand$Actual - results_thousand$Predicted)^2))
+
+```
 
 
 
+Test the model
+```{r}
+summary(model_hundred)
+```
 
+The multiple R squares had a value of 1, now it dropped to .975 due to excluding the Unit.Cost and Total.Cost columns meaning the model explains 100% of the variance, which might indicate overfitting, lets see a distribution of the data in histogram to check for any outliers
 
+```{r}
 
-
-
-
+```
 
 
 
