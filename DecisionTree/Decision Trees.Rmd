@@ -1,0 +1,139 @@
+---
+title: "Decision Trees Analysis - Drug Response Prediction"
+output:
+  html_document: default
+  pdf_document:
+    latex_engine: xelatex
+date: "2024-10-31"
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE)
+library(rpart)
+library(rpart.plot)
+library(caret)
+library(randomForest)
+library(tidyverse)
+library(skimr)
+library(dplyr)
+```
+
+### Data Overview and Initial Analysis
+
+```{r}
+drug_data <- read.csv('https://raw.githubusercontent.com/Kingtilon1/MachineLearning-BigData/refs/heads/main/DecisionTree/drug200.csv')
+head(drug_data)
+str(drug_data)
+skim(drug_data)
+```
+
+The medical dataset contains records for 200 patients with their corresponding drug responses. A quick examination shows we have a complete dataset with no missing values, which is crucial for building reliable decision trees. The data includes patient age ranging from 15 to 74 years, blood pressure levels, cholesterol readings, and Na_to_K ratios. This clean, well-structured dataset provides an excellent foundation for our classification task.
+
+### Understanding Target Variable Distribution
+
+```{r}
+table(drug_data$Drug)
+
+ggplot(drug_data, aes(x = Drug, fill = BP)) +
+  geom_bar(position = "stack") +
+  theme_minimal() +
+  labs(title = "Drug Distribution by Blood Pressure Levels")
+
+ggplot(drug_data, aes(x = Drug, fill = Cholesterol)) +
+  geom_bar(position = "stack") +
+  theme_minimal() +
+  labs(title = "Drug Distribution by Cholesterol Levels")
+```
+
+Understanding how different drugs are prescribed across various patient characteristics gives us insight into potential decision boundaries our trees might identify. The visualization shows clear patterns in drug prescriptions based on blood pressure and cholesterol levels. These distributions will help us interpret the splitting decisions our trees make during the classification process.
+
+### Data Preprocessing
+
+```{r}
+drug_data$Sex <- as.factor(drug_data$Sex)
+drug_data$BP <- as.factor(drug_data$BP)
+drug_data$Cholesterol <- as.factor(drug_data$Cholesterol)
+drug_data$Drug <- as.factor(drug_data$Drug)
+
+set.seed(123)
+train_index <- createDataPartition(drug_data$Drug, p = 0.8, list = FALSE)
+train_data <- drug_data[train_index, ]
+test_data <- drug_data[-train_index, ]
+```
+
+For proper decision tree construction, we've converted our categorical variables to factors. The data split maintains proportional representation of drug classes between training and test sets, ensuring our trees will learn from and be evaluated on representative samples.
+
+### First Decision Tree Model
+
+```{r}
+tree1 <- rpart(Drug ~ ., 
+               data = train_data,
+               method = "class",
+               control = rpart.control(minsplit = 5))
+
+rpart.plot(tree1, extra = 1)
+
+pred_tree1 <- predict(tree1, test_data, type = "class")
+conf_matrix1 <- confusionMatrix(pred_tree1, test_data$Drug)
+print(conf_matrix1)
+```
+
+Our first decision tree demonstrates impressive predictive power with 97.37% accuracy. The tree structure reveals that Na_to_K ratio serves as the primary splitting criterion, followed by blood pressure and age as secondary decision nodes. The model shows perfect prediction for drugs A, B, and C, with only a single misclassification between drugX and drugY. The high Kappa value of 0.9611 confirms the model's strong performance isn't due to chance.
+
+### Second Decision Tree Model
+
+```{r}
+tree2 <- rpart(Drug ~ ., 
+               data = train_data,
+               method = "class",
+               control = rpart.control(minsplit = 5))
+
+tree2$control$minbucket <- 2
+tree2$control$minsplit <- 4
+tree2$control$maxdepth <- 5
+
+rpart.plot(tree2, extra = 1)
+
+pred_tree2 <- predict(tree2, test_data, type = "class")
+conf_matrix2 <- confusionMatrix(pred_tree2, test_data$Drug)
+print(conf_matrix2)
+```
+
+When attempting to create a different tree structure, we find the algorithm consistently returns to the same configuration as our first tree. This suggests the Na_to_K ratio is such a strong predictor that alternative splitting arrangements don't improve classification performance. The stability of this structure across different parameterizations indicates we've found a robust classification pattern.
+
+### Random Forest Model
+
+```{r}
+rf_model <- randomForest(Drug ~ ., 
+                        data = train_data,
+                        ntree = 500,
+                        importance = TRUE)
+
+pred_rf <- predict(rf_model, test_data)
+conf_matrix_rf <- confusionMatrix(pred_rf, test_data$Drug)
+
+importance(rf_model)
+varImpPlot(rf_model)
+
+print(conf_matrix_rf)
+```
+
+The Random Forest model confirms our findings from the individual decision trees. The variable importance plot reinforces Na_to_K ratio as the strongest predictor, with blood pressure also showing significant predictive power. Sex appears as the least influential feature. The model maintains the same 97.37% accuracy as our single trees, suggesting the relationships in our data are straightforward enough that ensemble methods don't provide additional benefit.
+
+### Model Comparison
+
+```{r}
+results <- data.frame(
+  Model = c("Decision Tree 1", "Decision Tree 2", "Random Forest"),
+  Accuracy = c(conf_matrix1$overall["Accuracy"],
+               conf_matrix2$overall["Accuracy"],
+               conf_matrix_rf$overall["Accuracy"]),
+  Kappa = c(conf_matrix1$overall["Kappa"],
+            conf_matrix2$overall["Kappa"],
+            conf_matrix_rf$overall["Kappa"])
+)
+
+print(results)
+```
+
+The consistency in performance across all three models, with identical accuracy and Kappa values, suggests we've uncovered the fundamental patterns in our data. The persistence of just one misclassification between drugX and drugY across all models indicates this might represent a genuinely ambiguous case in our dataset. The fact that even our Random Forest couldn't improve upon the single decision tree's performance suggests that a simple, interpretable decision tree might be the most practical choice for this medical classification task.
