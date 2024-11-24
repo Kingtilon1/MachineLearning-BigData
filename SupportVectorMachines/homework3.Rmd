@@ -1,0 +1,150 @@
+---
+title: "Support Vector Machines"
+output:
+  pdf_document:
+    latex_engine: xelatex
+  html_document: default
+date: "2024-11-24"
+---
+SVM Analysis of Drug Response Data
+
+---
+title: "SVM Analysis - Drug Response Prediction"
+output:
+  html_document: default
+  pdf_document:
+    latex_engine: xelatex
+date: "2024-11-24"
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE)
+library(e1071)
+library(caret)
+library(tidyverse)
+library(skimr)
+```
+
+### Data Loading and Initial Exploration
+
+```{r}
+drug_data <- read.csv('https://raw.githubusercontent.com/Kingtilon1/MachineLearning-BigData/refs/heads/main/DecisionTree/drug200.csv')
+
+head(drug_data)
+str(drug_data)
+skim(drug_data)
+```
+
+### Data Preprocessing
+
+```{r}
+drug_data$Sex <- as.factor(drug_data$Sex)
+drug_data$BP <- as.factor(drug_data$BP)
+drug_data$Cholesterol <- as.factor(drug_data$Cholesterol)
+drug_data$Drug <- as.factor(drug_data$Drug)
+
+set.seed(123)
+train_index <- createDataPartition(drug_data$Drug, p = 0.8, list = FALSE)
+train_data <- drug_data[train_index, ]
+test_data <- drug_data[-train_index, ]
+
+preproc <- preProcess(train_data[, c("Age", "Na_to_K")], method = c("center", "scale"))
+train_data_scaled <- predict(preproc, train_data)
+test_data_scaled <- predict(preproc, test_data)
+```
+
+### SVM Model with Linear Kernel
+
+```{r}
+svm_linear <- svm(Drug ~ ., data = train_data_scaled, kernel = "linear", cost = 1)
+
+pred_linear <- predict(svm_linear, test_data_scaled)
+conf_matrix_linear <- confusionMatrix(pred_linear, test_data_scaled$Drug)
+print(conf_matrix_linear)
+```
+
+### SVM Model with Radial Kernel
+
+```{r}
+svm_radial <- svm(Drug ~ ., data = train_data_scaled, kernel = "radial", cost = 1)
+
+pred_radial <- predict(svm_radial, test_data_scaled)
+conf_matrix_radial <- confusionMatrix(pred_radial, test_data_scaled$Drug)
+print(conf_matrix_radial)
+```
+
+### Tuning SVM Parameters
+
+```{r}
+tuning_grid <- expand.grid(
+  cost = c(0.1, 1, 10),
+  gamma = c(0.1, 1, 10)
+)
+
+svm_tune <- tune.svm(
+  Drug ~ ., 
+  data = train_data_scaled,
+  kernel = "radial",
+  cost = c(0.1, 1, 10),
+  gamma = c(0.1, 1, 10)
+)
+print(svm_tune$best.parameters)
+
+svm_final <- svm(
+  Drug ~ .,
+  data = train_data_scaled,
+  kernel = "radial",
+  cost = svm_tune$best.parameters$cost,
+  gamma = svm_tune$best.parameters$gamma
+)
+
+pred_final <- predict(svm_final, test_data_scaled)
+conf_matrix_final <- confusionMatrix(pred_final, test_data_scaled$Drug)
+print(conf_matrix_final)
+```
+
+### Variable Importance Analysis
+
+```{r}
+importance <- data.frame(
+  Feature = names(train_data_scaled)[-which(names(train_data_scaled) == "Drug")],
+  Importance = 0
+)
+
+for(feature in importance$Feature) {
+  test_permuted <- test_data_scaled
+  test_permuted[,feature] <- sample(test_permuted[,feature])
+  
+  pred_permuted <- predict(svm_final, test_permuted)
+  
+  importance$Importance[importance$Feature == feature] <- 
+    mean(pred_final == test_data_scaled$Drug) - mean(pred_permuted == test_data_scaled$Drug)
+}
+
+importance <- importance[order(-importance$Importance),]
+ggplot(importance, aes(x = reorder(Feature, Importance), y = Importance)) +
+  geom_bar(stat = "identity") +
+  coord_flip() +
+  theme_minimal() +
+  labs(title = "Feature Importance in SVM Model",
+       x = "Features",
+       y = "Importance (Accuracy Drop)")
+```
+
+### Comparison with Decision Tree Results
+
+```{r}
+results_comparison <- data.frame(
+  Model = c("Decision Tree", "SVM Linear", "SVM Radial", "SVM Tuned"),
+  Accuracy = c(0.97,
+               conf_matrix_linear$overall["Accuracy"],
+               conf_matrix_radial$overall["Accuracy"],
+               conf_matrix_final$overall["Accuracy"]),
+  Kappa = c(0.96, 
+            conf_matrix_linear$overall["Kappa"],
+            conf_matrix_radial$overall["Kappa"],
+            conf_matrix_final$overall["Kappa"])
+)
+
+print(results_comparison)
+```
